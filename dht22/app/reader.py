@@ -56,7 +56,7 @@ def collect_window(sensor):
 
 def main():
     sensor = adafruit_dht.DHT22(board.D4, use_pulseio=False)
-    client = mqtt.Client()
+    client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
     client.connect(MQTT_HOST, MQTT_PORT)
     client.loop_start()
 
