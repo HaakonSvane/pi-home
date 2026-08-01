@@ -1,0 +1,15 @@
+services:
+  homebridge:
+    container_name: homebridge
+    image: homebridge/homebridge:latest
+    network_mode: host
+    environment:
+      TZ: Europe/Oslo
+      ENABLE_AVAHI: "0"
+    volumes:
+      - ./data:/homebridge
+      - /var/run/dbus:/var/run/dbus
+      - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket
+    security_opt:
+      - apparmor:unconfined
+    restart: unless-stopped

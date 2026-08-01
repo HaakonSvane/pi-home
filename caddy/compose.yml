@@ -1,0 +1,22 @@
+services:
+  caddy:
+    container_name: caddy
+    image: caddy:2-alpine
+    environment:
+      TZ: Europe/Oslo
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data:/data
+    networks:
+      - homelab
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+networks:
+  homelab:
+    external: true

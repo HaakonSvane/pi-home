@@ -7,7 +7,8 @@ services:
       MQTT_HOST: mosquitto
       MQTT_PORT: "1883"
       MQTT_TOPIC_PREFIX: home/dht22
-      READ_INTERVAL_SECONDS: "30"
+      SAMPLE_INTERVAL_SECONDS: "15"
+      PUBLISH_INTERVAL_SECONDS: "120"
     devices:
       - /dev/gpiochip4:/dev/gpiochip4
     networks:
