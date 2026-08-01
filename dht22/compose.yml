@@ -15,8 +15,12 @@ services:
       # Force it instead of trying to unmask /sys/firmware (which needs --privileged).
       BLINKA_FORCECHIP: BCM2XXX
       BLINKA_FORCEBOARD: RASPBERRY_PI_5
-    devices:
-      - /dev/gpiochip4:/dev/gpiochip4
+    # Blinka's lgpio backend scans the host's real /sys/bus/gpio/devices to find
+    # whichever gpiochip number the kernel assigned RP1's GPIO driver to — that
+    # number isn't stable across kernel versions (it's moved between 0, 4, and
+    # others upstream), so /dev/gpiochip4 alone doesn't reliably match. Privileged
+    # avoids chasing that number every kernel update.
+    privileged: true
     networks:
       - homelab
     logging:
