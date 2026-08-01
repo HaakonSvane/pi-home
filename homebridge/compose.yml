@@ -12,4 +12,9 @@ services:
       - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket
     security_opt:
       - apparmor:unconfined
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped

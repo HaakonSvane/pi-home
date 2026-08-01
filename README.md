@@ -8,6 +8,7 @@ Services running on the home Raspberry Pi. Each service lives in its own directo
 - **Persistent state**: any service with runtime state to persist bind-mounts a single flat `./data` directory into whatever path the container expects (e.g. `./data:/etc/pihole`, `./data:/mosquitto/data`). One `data/` per service, no nested subfolders — keeps every service's compose file predictable to read and the blanket `data/` rule in `.gitignore` trivially covers all of them. Static, version-controlled config (not runtime state) lives outside `data/` instead — e.g. `mosquitto/config/mosquitto.conf`, `caddy/Caddyfile`.
 - **Env vars and secrets**: plain, non-sensitive config (`TZ`, ports, intervals, hostnames) lives directly in `compose.yml` under `environment:` — no `.env` indirection for values that aren't secret. A service only gets a `.env` file when it actually holds a credential (e.g. `pihole/.env` for `PIHOLE_PASSWORD`), referenced via `${VAR}` interpolation. `.env`/`*.env` is blanket-gitignored so any future secret is covered automatically.
 - `container_name` is always set explicitly (matches the service name) and `restart: unless-stopped` is always used.
+- **Log size**: every service caps its logs (`logging: driver: json-file, options: {max-size: "10m", max-file: "3"}`, ~30MB max per container) — Docker's `json-file` driver has no size limit by default, and this is an SD card, not a server disk.
 
 ## Services
 

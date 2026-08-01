@@ -9,10 +9,21 @@ services:
       MQTT_TOPIC_PREFIX: home/dht22
       SAMPLE_INTERVAL_SECONDS: "15"
       PUBLISH_INTERVAL_SECONDS: "120"
+      # Docker masks /sys/firmware in unprivileged containers, so Blinka's board
+      # autodetection (which reads /proc/device-tree, a symlink into /sys/firmware)
+      # can't identify the Pi and raises NotImplementedError on `import board`.
+      # Force it instead of trying to unmask /sys/firmware (which needs --privileged).
+      BLINKA_FORCECHIP: BCM2XXX
+      BLINKA_FORCEBOARD: RASPBERRY_PI_5
     devices:
       - /dev/gpiochip4:/dev/gpiochip4
     networks:
       - homelab
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
 
 networks:
