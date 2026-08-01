@@ -1,0 +1,19 @@
+services:
+  dht22:
+    container_name: dht22
+    build: .
+    environment:
+      TZ: Europe/Oslo
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_TOPIC_PREFIX: home/dht22
+      READ_INTERVAL_SECONDS: "30"
+    devices:
+      - /dev/gpiochip4:/dev/gpiochip4
+    networks:
+      - homelab
+    restart: unless-stopped
+
+networks:
+  homelab:
+    external: true
