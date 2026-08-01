@@ -6,7 +6,7 @@ Services running on the home Raspberry Pi. Each service lives in its own directo
 
 - **File naming**: `compose.yml` (not `docker-compose.yml`) inside each service directory.
 - **Persistent state**: any service with runtime state to persist bind-mounts a single flat `./data` directory into whatever path the container expects (e.g. `./data:/etc/pihole`, `./data:/mosquitto/data`). One `data/` per service, no nested subfolders — keeps every service's compose file predictable to read and the blanket `data/` rule in `.gitignore` trivially covers all of them. Static, version-controlled config (not runtime state) lives outside `data/` instead — e.g. `mosquitto/config/mosquitto.conf`, `caddy/Caddyfile`.
-- **Env vars and secrets**: plain, non-sensitive config (`TZ`, ports, intervals, hostnames) lives directly in `compose.yml` under `environment:` — no `.env` indirection for values that aren't secret. A service only gets a `.env` file when it actually holds a credential (e.g. `pihole/.env` for `PIHOLE_PASSWORD`), referenced via `${VAR}` interpolation. `.env`/`*.env` is blanket-gitignored so any future secret is covered automatically.
+- **Env vars, secrets, and deployment-specific values**: config that's the same regardless of which Pi/network this runs on (`TZ`, ports, intervals) lives directly in `compose.yml` under `environment:`. A service gets a `.env` file when a value is either a secret (e.g. `PIHOLE_PASSWORD`) or genuinely deployment-specific — would differ if this repo were deployed elsewhere (e.g. `PIHOLE_LAN_IP`) — referenced via `${VAR}` interpolation either way. `.env`/`*.env` is blanket-gitignored so both cases are covered automatically.
 - `container_name` is always set explicitly (matches the service name) and `restart: unless-stopped` is always used.
 - **Log size**: every service caps its logs (`logging: driver: json-file, options: {max-size: "10m", max-file: "3"}`, ~30MB max per container) — Docker's `json-file` driver has no size limit by default, and this is an SD card, not a server disk.
 
@@ -15,24 +15,28 @@ Services running on the home Raspberry Pi. Each service lives in its own directo
 - `pihole/` — DNS ad-blocking. Web UI is not published to the host — reachable only via Caddy.
 - `mosquitto/` — MQTT broker used as the pub/sub backbone for sensors and other services.
 - `dht22/` — reads the DHT22 sensor in the basement low-voltage cabinet (wired to GPIO4) roughly every 15s, and every 2 minutes averages that window's readings and publishes temperature, humidity, and a calculated dew point to Mosquitto on `home/dht22/{temperature,humidity,dew_point}` (retained).
-- `caddy/` — reverse proxy. The only service bound to host ports 80/443. Routes friendly hostnames under `home.arpa` to each service's web UI, with HTTPS via Caddy's own internal CA.
+- `caddy/` — reverse proxy. The only service bound to host ports 80/443. Routes friendly hostnames under `.lan` to each service's web UI, with HTTPS via Caddy's own internal CA.
 - `homebridge/` — HomeKit bridge, exposing the DHT22 readings (via MQTT) as Apple Home accessories. Runs with `network_mode: host` — see below, it's a deliberate exception to how every other service is networked.
 
 ## Accessing services by hostname
 
-Each service with a web UI gets a subdomain under `home.arpa` (e.g. `https://pihole.home.arpa`), proxied by Caddy. New sites are added as blocks in `caddy/Caddyfile`.
+Each service with a web UI gets a subdomain under `.lan` (e.g. `https://pihole.lan`), proxied by Caddy. New sites are added as blocks in `caddy/Caddyfile`.
 
-We use `home.arpa` rather than `.local` because `.local` is reserved for mDNS/Bonjour — macOS, iOS, Linux, and Windows all intercept `.local` lookups before they'd reach Pi-hole's DNS, so a wildcard record for it wouldn't resolve reliably. `home.arpa` is the IETF-standardized domain for exactly this (RFC 8375).
+`.lan` is not the most "spec-correct" choice — `.local` is reserved for mDNS/Bonjour (intercepted by macOS/iOS/Linux/Windows before a real DNS query fires) and `home.arpa` is the IETF-standardized domain for exactly this (RFC 8375) — but we tried `home.arpa` first and hit a confirmed bug in Pi-hole FTL (v6.7): FTL hardcodes RFC 8375 compliance for `home.arpa`, always answering it locally and refusing to forward it, and the documented escape hatch for this (`dns.domain.name`/`dns.domain.local`, added in FTL PR #2772) did not work even when verified correctly applied in FTL's own live config. `.lan` sidesteps the whole problem: it's Pi-hole's own **default** local domain (`dns.domain.name` defaults to `"lan"`, `dns.domain.local` defaults to `true`), so there's no hardcoded special-case behavior fighting a plain wildcard override.
 
 ### One-time setup: wildcard DNS in Pi-hole
 
-Pi-hole needs to answer for `*.home.arpa` and point it at the Pi. In the Pi-hole admin UI: **Settings → All Settings → (Expert mode) → search `dnsmasq_lines`**, and add:
+Pi-hole needs to answer for `*.lan` and point it at the Pi. This is declared in `pihole/compose.yml` (`FTLCONF_misc_dnsmasq_lines: address=/lan/${PIHOLE_LAN_IP}`) — the only thing to do is set the Pi's actual LAN IP once in `pihole/.env`:
 
 ```
-address=/home.arpa/<pi-lan-ip>
+PIHOLE_LAN_IP=<pi-lan-ip>
 ```
 
-This only works for devices that already use Pi-hole as their DNS resolver (should be true network-wide already). Give the Pi a DHCP reservation on your router so `<pi-lan-ip>` doesn't drift.
+(`dns.domain.name`/`dns.domain.local` are deliberately left unset — `.lan` is already Pi-hole's default for both, see above.)
+
+After changing `pihole/.env`, recreate the container so the new env var is picked up: `docker compose -f pihole/compose.yml up -d`. Verify with `dig @<pi-lan-ip> pihole.lan` — it should return `<pi-lan-ip>` in the answer section, not `NXDOMAIN`.
+
+This only works for devices that already use Pi-hole as their DNS resolver (should be true network-wide already). Give the Pi a DHCP reservation on your router so `<pi-lan-ip>` doesn't drift — if it ever does, update `PIHOLE_LAN_IP` and recreate the container again.
 
 ### One-time setup: trusting Caddy's internal CA
 
@@ -73,13 +77,13 @@ networks:
 HomeKit relies on mDNS/Bonjour multicast plus dynamic per-accessory TCP ports, neither of which survive Docker's normal bridge-mode NAT. The official Homebridge image requires `network_mode: host` to work at all — so, unlike every other service here, `homebridge/compose.yml` does **not** join `homelab` (Docker Compose doesn't allow `network_mode: host` and `networks:` on the same service anyway). Two consequences fall out of that:
 
 - **Reaching Mosquitto**: Homebridge connects to `mqtt://127.0.0.1:1883` — since it shares the host's network namespace, it hits Mosquitto's already-published host port directly, no container name needed.
-- **Caddy reaching Homebridge**: Caddy is still on `homelab` (a bridge network) and can't resolve `homebridge` by container name either. Instead, `caddy/compose.yml` sets `extra_hosts: ["host.docker.internal:host-gateway"]` (a Linux Docker Engine 20.10+ feature) so its `homebridge.home.arpa` site block can target `host.docker.internal:8581` — the host's own IP — without hardcoding the Pi's LAN address anywhere.
+- **Caddy reaching Homebridge**: Caddy is still on `homelab` (a bridge network) and can't resolve `homebridge` by container name either. Instead, `caddy/compose.yml` sets `extra_hosts: ["host.docker.internal:host-gateway"]` (a Linux Docker Engine 20.10+ feature) so its `homebridge.lan` site block can target `host.docker.internal:8581` — the host's own IP — without hardcoding the Pi's LAN address anywhere.
 
 **mDNS advertiser**: Homebridge defaults to its own bundled "Ciao" mDNS responder, but Raspberry Pi OS already runs `avahi-daemon` (that's what serves `raspberrypi.local`), and running both on UDP 5353 has documented reliability issues. `homebridge/compose.yml` sets `ENABLE_AVAHI: "0"` and bind-mounts the host's `/var/run/dbus` and `/var/run/avahi-daemon/socket` so Homebridge can be pointed at the host's Avahi instead (set in the UI — see setup steps below).
 
 ### One-time setup: Homebridge
 
-1. `docker compose -f homebridge/compose.yml up -d`, then visit `https://homebridge.home.arpa` and complete the first-run admin account wizard.
+1. `docker compose -f homebridge/compose.yml up -d`, then visit `https://homebridge.lan` and complete the first-run admin account wizard.
 2. In the UI: **Settings → Homebridge Settings → Advertiser → Avahi**, then restart Homebridge from the UI.
 3. **Plugins → search "mqttthing" → install** (`homebridge-mqttthing`).
 4. Add two accessories via the UI's config editor:

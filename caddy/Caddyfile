@@ -2,10 +2,10 @@
 	local_certs
 }
 
-pihole.home.arpa {
+pihole.lan {
 	reverse_proxy pihole:80
 }
 
-homebridge.home.arpa {
+homebridge.lan {
 	reverse_proxy host.docker.internal:8581
 }
