@@ -3,6 +3,7 @@
 }
 
 pihole.lan {
+	redir / /admin/
 	reverse_proxy pihole:80
 }
 
