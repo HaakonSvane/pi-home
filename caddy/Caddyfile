@@ -2,10 +2,10 @@
 	local_certs
 }
 
-pihole.svane.home.arpa {
+pihole.home.arpa {
 	reverse_proxy pihole:80
 }
 
-homebridge.svane.home.arpa {
+homebridge.home.arpa {
 	reverse_proxy host.docker.internal:8581
 }

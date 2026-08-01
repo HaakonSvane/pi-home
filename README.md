@@ -14,21 +14,21 @@ Services running on the home Raspberry Pi. Each service lives in its own directo
 - `pihole/` — DNS ad-blocking. Web UI is not published to the host — reachable only via Caddy.
 - `mosquitto/` — MQTT broker used as the pub/sub backbone for sensors and other services.
 - `dht22/` — reads the DHT22 sensor in the basement low-voltage cabinet (wired to GPIO4) roughly every 15s, and every 2 minutes averages that window's readings and publishes temperature, humidity, and a calculated dew point to Mosquitto on `home/dht22/{temperature,humidity,dew_point}` (retained).
-- `caddy/` — reverse proxy. The only service bound to host ports 80/443. Routes friendly hostnames under `svane.home.arpa` to each service's web UI, with HTTPS via Caddy's own internal CA.
+- `caddy/` — reverse proxy. The only service bound to host ports 80/443. Routes friendly hostnames under `home.arpa` to each service's web UI, with HTTPS via Caddy's own internal CA.
 - `homebridge/` — HomeKit bridge, exposing the DHT22 readings (via MQTT) as Apple Home accessories. Runs with `network_mode: host` — see below, it's a deliberate exception to how every other service is networked.
 
 ## Accessing services by hostname
 
-Each service with a web UI gets a subdomain under `svane.home.arpa` (e.g. `https://pihole.svane.home.arpa`), proxied by Caddy. New sites are added as blocks in `caddy/Caddyfile`.
+Each service with a web UI gets a subdomain under `home.arpa` (e.g. `https://pihole.home.arpa`), proxied by Caddy. New sites are added as blocks in `caddy/Caddyfile`.
 
-We use `svane.home.arpa` rather than `.local` because `.local` is reserved for mDNS/Bonjour — macOS, iOS, Linux, and Windows all intercept `.local` lookups before they'd reach Pi-hole's DNS, so a wildcard record for it wouldn't resolve reliably. `home.arpa` is the IETF-standardized domain for exactly this (RFC 8375).
+We use `home.arpa` rather than `.local` because `.local` is reserved for mDNS/Bonjour — macOS, iOS, Linux, and Windows all intercept `.local` lookups before they'd reach Pi-hole's DNS, so a wildcard record for it wouldn't resolve reliably. `home.arpa` is the IETF-standardized domain for exactly this (RFC 8375).
 
 ### One-time setup: wildcard DNS in Pi-hole
 
-Pi-hole needs to answer for `*.svane.home.arpa` and point it at the Pi. In the Pi-hole admin UI: **Settings → All Settings → (Expert mode) → search `dnsmasq_lines`**, and add:
+Pi-hole needs to answer for `*.home.arpa` and point it at the Pi. In the Pi-hole admin UI: **Settings → All Settings → (Expert mode) → search `dnsmasq_lines`**, and add:
 
 ```
-address=/svane.home.arpa/<pi-lan-ip>
+address=/home.arpa/<pi-lan-ip>
 ```
 
 This only works for devices that already use Pi-hole as their DNS resolver (should be true network-wide already). Give the Pi a DHCP reservation on your router so `<pi-lan-ip>` doesn't drift.
@@ -72,13 +72,13 @@ networks:
 HomeKit relies on mDNS/Bonjour multicast plus dynamic per-accessory TCP ports, neither of which survive Docker's normal bridge-mode NAT. The official Homebridge image requires `network_mode: host` to work at all — so, unlike every other service here, `homebridge/compose.yml` does **not** join `homelab` (Docker Compose doesn't allow `network_mode: host` and `networks:` on the same service anyway). Two consequences fall out of that:
 
 - **Reaching Mosquitto**: Homebridge connects to `mqtt://127.0.0.1:1883` — since it shares the host's network namespace, it hits Mosquitto's already-published host port directly, no container name needed.
-- **Caddy reaching Homebridge**: Caddy is still on `homelab` (a bridge network) and can't resolve `homebridge` by container name either. Instead, `caddy/compose.yml` sets `extra_hosts: ["host.docker.internal:host-gateway"]` (a Linux Docker Engine 20.10+ feature) so its `homebridge.svane.home.arpa` site block can target `host.docker.internal:8581` — the host's own IP — without hardcoding the Pi's LAN address anywhere.
+- **Caddy reaching Homebridge**: Caddy is still on `homelab` (a bridge network) and can't resolve `homebridge` by container name either. Instead, `caddy/compose.yml` sets `extra_hosts: ["host.docker.internal:host-gateway"]` (a Linux Docker Engine 20.10+ feature) so its `homebridge.home.arpa` site block can target `host.docker.internal:8581` — the host's own IP — without hardcoding the Pi's LAN address anywhere.
 
 **mDNS advertiser**: Homebridge defaults to its own bundled "Ciao" mDNS responder, but Raspberry Pi OS already runs `avahi-daemon` (that's what serves `raspberrypi.local`), and running both on UDP 5353 has documented reliability issues. `homebridge/compose.yml` sets `ENABLE_AVAHI: "0"` and bind-mounts the host's `/var/run/dbus` and `/var/run/avahi-daemon/socket` so Homebridge can be pointed at the host's Avahi instead (set in the UI — see setup steps below).
 
 ### One-time setup: Homebridge
 
-1. `docker compose -f homebridge/compose.yml up -d`, then visit `https://homebridge.svane.home.arpa` and complete the first-run admin account wizard.
+1. `docker compose -f homebridge/compose.yml up -d`, then visit `https://homebridge.home.arpa` and complete the first-run admin account wizard.
 2. In the UI: **Settings → Homebridge Settings → Advertiser → Avahi**, then restart Homebridge from the UI.
 3. **Plugins → search "mqttthing" → install** (`homebridge-mqttthing`).
 4. Add two accessories via the UI's config editor:
